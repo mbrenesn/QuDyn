@@ -10,16 +10,22 @@ class DiagonalOp
   public:
     // Methods
     DiagonalOp(const Environment &env,
-               const Basis &basis);
+               const Basis &basis,
+               bool sigma_z_mats = false);
     ~DiagonalOp();
     DiagonalOp(const DiagonalOp &rhs);
     DiagonalOp &operator=(const DiagonalOp &rhs);
     // Members
     Vec DiagonalVec;
+    std::vector<Vec> SigmaZ;
     void construct_xxz_diagonal(LLInt *int_basis,
-                                double tau,
-                                double delta,
+                                double &tau,
+                                double &delta,
                                 std::vector<double> &h);
+    void construct_schwinger_diagonal(LLInt *int_basis,
+                                      double &V,
+                                      double &h,
+                                      bool &rand);
 
   private:
     unsigned int l_, n_;
@@ -29,5 +35,6 @@ class DiagonalOp
     PetscInt nlocal_;
     PetscInt start_;
     PetscInt end_;
+    bool sigma_z_mats_;
 };
 #endif
