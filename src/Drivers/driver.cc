@@ -6,20 +6,20 @@
 #include "../Basis/Basis.h"
 #include "../Operators/AdjacencyOp.h"
 #include "../Operators/DiagonalOp.h"
+#include "../InitialState/InitialState.h"
 #include "../TimeEvo/KrylovEvo.h"
 #include "../TimeEvo/ChebyshevEvo.h"
 
 #include <petsctime.h>
 
-template <typename T>
-std::vector<T> linspace(T a, T b, size_t N) {
-    T h = (b - a) / static_cast<T>(N-1);
-    std::vector<T> xs(N);
-    typename std::vector<T>::iterator x;
-    T val;
-    for (x = xs.begin(), val = a; x != xs.end(); ++x, val += h)
+std::vector<double> linspace(double a, double b, size_t n) {
+    double h = (b - a) / static_cast<double>(n - 1);
+    std::vector<double> vec(n);
+    typename std::vector<double>::iterator x;
+    double val;
+    for (x = vec.begin(), val = a; x != vec.end(); ++x, val += h)
         *x = val;
-    return xs;
+    return vec;
 }
 
 int main(int argc, char **argv)
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
   int iterations = time_its + 1;
   KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
 
-  std::vector<double> times = linspace<double>(0.0, max_time, iterations);
+  std::vector<double> times = linspace(0.0, max_time, iterations);
   
   // Initial values
   PetscScalar z_mag;
