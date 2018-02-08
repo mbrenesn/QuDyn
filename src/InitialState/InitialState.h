@@ -20,6 +20,9 @@ class InitialState
     void random_initial_state(LLInt *int_basis,
                               bool wtime = false,
                               bool verbose = false);
+    void purified_mixed_initial_state(LLInt *int_basis,
+                                      double &mu,
+                                      bool wtime = false);
 
   private:
     unsigned int l_, n_;

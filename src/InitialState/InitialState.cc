@@ -128,3 +128,68 @@ void InitialState::random_initial_state(LLInt *int_basis,
   VecAssemblyBegin(InitialVec);
   VecAssemblyEnd(InitialVec);
 }
+
+/*******************************************************************************/
+// Purified mixed initial state. 
+// See ref: Žnidarič, M. et al. Nature Communications 16117 (2017) 
+/*******************************************************************************/
+void InitialState::purified_mixed_initial_state(LLInt *int_basis,
+                                                double &mu,
+                                                bool wtime)
+{
+  std::vector<double> pick_phase(l_);
+  boost::random::mt19937 gen;
+  const double pi = boost::math::constants::pi<double>();
+
+  if(wtime) gen.seed(static_cast<LLInt>(std::time(0)));
+
+  if(mpirank_ == 0){
+    boost::random::uniform_real_distribution<double> dist(0, 2 * pi);
+    for(unsigned int i = 0; i < l_; ++i)
+      pick_phase[i] = dist(gen);
+  }
+  MPI_Bcast(&pick_phase[0], l_, MPI_DOUBLE, 0, PETSC_COMM_WORLD);
+  
+  // Initial state construction
+  for(PetscInt state = start_; state < end_; ++state){
+   
+    LLInt bs = int_basis[state - start_];
+
+    // Loop over all sites of the bit representation
+    std::complex<double> coefficient = 1.0;
+    for(unsigned int site = 0; site < l_; ++site){
+      
+      // Case 1: Particle in site (spin up)
+      if(bs & (1 << site)){
+        if(site < (l_ / 2)){
+          coefficient *= PetscSqrtReal((1 - mu) / 2);
+          continue;
+        }
+        else{
+          coefficient *= PetscSqrtReal((1 + mu) / 2);
+          continue;
+        }
+      }
+      // Case 2: No particle in site (spin down)
+      else{
+        if(site < (l_ / 2)){
+          coefficient *= PetscSqrtReal((1 + mu) / 2) * PetscExpComplex(PETSC_i 
+            * pick_phase[l_ - site - 1]);
+          continue;
+        }
+        else{
+          coefficient *= PetscSqrtReal((1 - mu) / 2) * PetscExpComplex(PETSC_i 
+            * pick_phase[l_ - site - 1]);
+          continue;
+        }
+      }    
+    }
+    VecSetValue(InitialVec, state, coefficient, INSERT_VALUES);
+  }
+  VecAssemblyBegin(InitialVec);
+  VecAssemblyEnd(InitialVec);
+  PetscReal norm;
+  VecNorm(InitialVec, NORM_2, &norm);
+  VecNormalize(InitialVec, &norm);
+  VecNorm(InitialVec, NORM_2, &norm);
+}
