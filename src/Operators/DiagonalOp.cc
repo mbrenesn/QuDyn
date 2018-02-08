@@ -116,11 +116,8 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
     double mag_term = 0.0; // On-site term
     // Loop over all sites of the bit representation
     for(unsigned int site = 0; site < l_; ++site){
-      // A copy to avoid modifying the original basis
-      LLInt bitset = bs;
-      
       // On-site term
-      if(bitset & (1 << site)){ 
+      if(bs & (1 << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
           mag_term += h[site] * tau * 0.5;
       }
@@ -134,11 +131,11 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
 
       // Interaction
       // Case 1: There's a particle in this site
-      if(bitset & (1 << site)){
+      if(bs & (1 << site)){
         int next_site1 = (site + 1);
 
         // If there's a particle in next site, increase interaction
-        if(bitset & (1 << next_site1)){
+        if(bs & (1 << next_site1)){
           Vi += delta * tau;
           continue;
         }
@@ -153,7 +150,7 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
         int next_site0 = (site + 1);
 
         // If there's a particle in the next site, decrease interaction
-        if(bitset & (1 << next_site0)){
+        if(bs & (1 << next_site0)){
           Vi -= delta * tau;
           continue;
         }
