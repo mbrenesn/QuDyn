@@ -5,6 +5,7 @@
 #include <boost/math/constants/constants.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/uniform_int_distribution.hpp>
+#include <boost/random/uniform_real_distribution.hpp>
 #include <cmath>
 
 #include "../Environment/Environment.h"
