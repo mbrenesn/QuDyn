@@ -19,7 +19,6 @@ class DiagonalOp
     Vec DiagonalVec;
     std::vector<Vec> SigmaZ;
     void construct_xxz_diagonal(LLInt *int_basis,
-                                double &tau,
                                 double &delta,
                                 std::vector<double> &h);
     void construct_schwinger_diagonal(LLInt *int_basis,

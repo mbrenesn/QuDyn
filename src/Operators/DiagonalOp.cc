@@ -103,7 +103,6 @@ DiagonalOp::~DiagonalOp()
 // Constructs the diagonal part of XXZ Hamiltonian
 /*******************************************************************************/
 void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
-                                        double &tau,
                                         double &delta,
                                         std::vector<double> &h) 
 {
@@ -119,14 +118,14 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
       // On-site term
       if(bs & (1 << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
-          mag_term += h[site] * tau * 0.5;
+          mag_term += h[site];
       }
       else{ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, -1.0, INSERT_VALUES);
-          mag_term -= h[site] * tau * 0.5;
+          mag_term -= h[site];
       }
 
-      // Open boundary coundition
+      // Open boundary condition
       if(site == (l_ - 1)) continue;
 
       // Interaction
@@ -136,12 +135,12 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
 
         // If there's a particle in next site, increase interaction
         if(bs & (1 << next_site1)){
-          Vi += delta * tau;
+          Vi += delta;
           continue;
         }
         // Otherwise decrease interaction
         else{
-          Vi -= delta * tau;
+          Vi -= delta;
           continue;
         }
       }
@@ -151,12 +150,12 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
 
         // If there's a particle in the next site, decrease interaction
         if(bs & (1 << next_site0)){
-          Vi -= delta * tau;
+          Vi -= delta;
           continue;
         }
         // Otherwise increase interaction
         else{
-          Vi += delta * tau;
+          Vi += delta;
           continue;
         }
       }    

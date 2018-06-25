@@ -254,7 +254,7 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
   PetscFree(d_nnz);
   PetscFree(o_nnz);
 
-  PetscScalar ti = t_;
+  PetscScalar ti = 2.0 * t_;
   PetscScalar dummy = 0.0;
   // Grab 1 of the states and turn it into bit representation
   for(PetscInt state = start_; state < end_; ++state){
