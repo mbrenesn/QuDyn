@@ -23,7 +23,7 @@ void KrylovEvo::krylov_evo(const double &final_time,
                            const double &initial_time,
                            Vec &vec)
 {
-  FNSetScale(f_, (final_time - initial_time) * PETSC_i, 1.0);
+  FNSetScale(f_, (final_time - initial_time) * PETSC_i * -1.0, 1.0);
   MFNSolve(mfn_, vec, vec);
 
   MFNGetConvergedReason(mfn_, &reason);
