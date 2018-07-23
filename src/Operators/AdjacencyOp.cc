@@ -6,7 +6,8 @@
 /*******************************************************************************/
 AdjacencyOp::AdjacencyOp(const Environment &env,
                          const Basis &basis,
-                         double t)
+                         double t,
+                         bool current)
 {
   l_ = env.l;
   n_ = env.n;
@@ -17,10 +18,16 @@ AdjacencyOp::AdjacencyOp(const Environment &env,
   start_ = basis.start;
   end_ = basis.end;
   basis_size_ = basis.basis_size;
+  current_ = current;
 
   MatCreate(PETSC_COMM_WORLD, &AdjacencyMat);
   MatSetSizes(AdjacencyMat, nlocal_, nlocal_, basis_size_, basis_size_);
   MatSetType(AdjacencyMat, MATMPIAIJ);
+  if(current_){
+    MatCreate(PETSC_COMM_WORLD, &CurrentMat);
+    MatSetSizes(CurrentMat, nlocal_, nlocal_, basis_size_, basis_size_);
+    MatSetType(CurrentMat, MATMPIAIJ);
+  }
 
   construct_adjacency_(basis.int_basis);
 }
@@ -41,8 +48,11 @@ AdjacencyOp::AdjacencyOp(const AdjacencyOp &rhs)
   start_ = rhs.start_;
   end_ = rhs.end_;
   basis_size_ = rhs.basis_size_;
+  current_ = rhs.current_;
   
   MatDuplicate(rhs.AdjacencyMat, MAT_COPY_VALUES, &AdjacencyMat);
+  if(current_)
+    MatDuplicate(rhs.CurrentMat, MAT_COPY_VALUES, &CurrentMat);
 }
 
 /*******************************************************************************/
@@ -64,8 +74,11 @@ AdjacencyOp &AdjacencyOp::operator=(const AdjacencyOp &rhs)
     start_ = rhs.start_;
     end_ = rhs.end_;
     basis_size_ = rhs.basis_size_;
-  
+    current_ = rhs.current_;
+
     MatDuplicate(rhs.AdjacencyMat, MAT_COPY_VALUES, &AdjacencyMat);
+    if(current_)
+      MatDuplicate(rhs.CurrentMat, MAT_COPY_VALUES, &CurrentMat);
   }
 
   return *this;
@@ -74,6 +87,8 @@ AdjacencyOp &AdjacencyOp::operator=(const AdjacencyOp &rhs)
 AdjacencyOp::~AdjacencyOp()
 {
   MatDestroy(&AdjacencyMat);
+  if(current_)
+    MatDestroy(&CurrentMat);
 }
 
 /*******************************************************************************/
@@ -250,11 +265,15 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
 
   // Preallocation step
   MatMPIAIJSetPreallocation(AdjacencyMat, 0, d_nnz, 0, o_nnz);
+  if(current_)
+    MatMPIAIJSetPreallocation(CurrentMat, 0, d_nnz, 0, o_nnz);
 
   PetscFree(d_nnz);
   PetscFree(o_nnz);
-
+  
   PetscScalar ti = 2.0 * t_;
+  PetscScalar ci_p = 2.0 * t_ * PETSC_i;
+  PetscScalar ci_m = -2.0 * t_ * PETSC_i;
   PetscScalar dummy = 0.0;
   // Grab 1 of the states and turn it into bit representation
   for(PetscInt state = start_; state < end_; ++state){
@@ -295,6 +314,8 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
           } 
 
           MatSetValues(AdjacencyMat, 1, &match_ind1, 1, &state, &ti, ADD_VALUES);
+          if(current_)
+            MatSetValues(CurrentMat, 1, &match_ind1, 1, &state, &ci_p, ADD_VALUES);
         }
       }      
       // Case 2: There's no particle in this site
@@ -321,6 +342,8 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
           } 
         
           MatSetValues(AdjacencyMat, 1, &match_ind0, 1, &state, &ti, ADD_VALUES);
+          if(current_)
+            MatSetValues(CurrentMat, 1, &match_ind0, 1, &state, &ci_m, ADD_VALUES);
         }
         // Otherwise do nothing
         else{
@@ -335,10 +358,20 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
     LLInt st_c = st[in];
     LLInt cont_c = cont[in];
     MatSetValues(AdjacencyMat, 1, &cont_c, 1, &st_c, &ti, ADD_VALUES);
+    if(current_){
+      if(cont_c > st_c)
+        MatSetValues(CurrentMat, 1, &cont_c, 1, &st_c, &ci_p, ADD_VALUES);
+      else
+        MatSetValues(CurrentMat, 1, &cont_c, 1, &st_c, &ci_m, ADD_VALUES);
+    }
   }
 
   MatAssemblyBegin(AdjacencyMat, MAT_FINAL_ASSEMBLY);
   MatAssemblyEnd(AdjacencyMat, MAT_FINAL_ASSEMBLY);
-
   MatSetOption(AdjacencyMat, MAT_SYMMETRIC, PETSC_TRUE);
+  if(current_){ 
+    MatAssemblyBegin(CurrentMat, MAT_FINAL_ASSEMBLY);
+    MatAssemblyEnd(CurrentMat, MAT_FINAL_ASSEMBLY);
+    MatSetOption(CurrentMat, MAT_HERMITIAN, PETSC_TRUE);
+  }
 }

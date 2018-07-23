@@ -11,12 +11,14 @@ class AdjacencyOp
     // Methods
     AdjacencyOp(const Environment &env,
                 const Basis &basis,
-                double t);
+                double t,
+                bool current = false);
     ~AdjacencyOp();
     AdjacencyOp(const AdjacencyOp &rhs);
     AdjacencyOp &operator=(const AdjacencyOp &rhs);
     // Members
     Mat AdjacencyMat;
+    Mat CurrentMat;
   
   private:
     unsigned int l_, n_;
@@ -34,5 +36,6 @@ class AdjacencyOp
                                        PetscInt *diag,
                                        PetscInt *off);
     void construct_adjacency_(LLInt *int_basis);
+    bool current_;
 };
 #endif
