@@ -11,13 +11,15 @@ class DiagonalOp
     // Methods
     DiagonalOp(const Environment &env,
                const Basis &basis,
-               bool sigma_z_mats = false);
+               bool sigma_z_mats = false,
+               bool total_z_mat = false);
     ~DiagonalOp();
     DiagonalOp(const DiagonalOp &rhs);
     DiagonalOp &operator=(const DiagonalOp &rhs);
     // Members
     Vec DiagonalVec;
     std::vector<Vec> SigmaZ;
+    Vec TotalZ;
     void construct_xxz_diagonal(LLInt *int_basis,
                                 double &delta,
                                 std::vector<double> &h);
@@ -35,5 +37,6 @@ class DiagonalOp
     PetscInt start_;
     PetscInt end_;
     bool sigma_z_mats_;
+    bool total_z_mat_;
 };
 #endif

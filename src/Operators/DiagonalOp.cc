@@ -6,7 +6,8 @@
 /*******************************************************************************/
 DiagonalOp::DiagonalOp(const Environment &env,
                        const Basis &basis,
-                       bool sigma_z_mats)
+                       bool sigma_z_mats,
+                       bool total_z_mat)
 {
   l_ = env.l;
   n_ = env.n;
@@ -17,6 +18,7 @@ DiagonalOp::DiagonalOp(const Environment &env,
   end_ = basis.end;
   basis_size_ = basis.basis_size;
   sigma_z_mats_ = sigma_z_mats;
+  total_z_mat_ = total_z_mat; 
 
   VecCreateMPI(PETSC_COMM_WORLD, nlocal_, basis_size_, &DiagonalVec);
   if(sigma_z_mats_){
@@ -24,6 +26,9 @@ DiagonalOp::DiagonalOp(const Environment &env,
     for(unsigned int i = 0; i < SigmaZ.size(); ++i){
       VecDuplicate(DiagonalVec, &SigmaZ[i]);
     }
+  }
+  if(total_z_mat_){
+    VecDuplicate(DiagonalVec, &TotalZ);
   }
 }
 
@@ -43,6 +48,7 @@ DiagonalOp::DiagonalOp(const DiagonalOp &rhs)
   end_ = rhs.end_;
   basis_size_ = rhs.basis_size_;
   sigma_z_mats_ = rhs.sigma_z_mats_;
+  total_z_mat_ = rhs.total_z_mat_;
 
   VecDuplicate(rhs.DiagonalVec, &DiagonalVec);
   VecCopy(rhs.DiagonalVec, DiagonalVec);
@@ -52,6 +58,10 @@ DiagonalOp::DiagonalOp(const DiagonalOp &rhs)
       VecDuplicate(rhs.SigmaZ[i], &SigmaZ[i]);
       VecCopy(rhs.SigmaZ[i], SigmaZ[i]);
     }
+  }
+  if(rhs.total_z_mat_){
+    VecDuplicate(rhs.TotalZ, &TotalZ);
+    VecCopy(rhs.TotalZ, TotalZ);
   }
 }
 
@@ -84,6 +94,10 @@ DiagonalOp &DiagonalOp::operator=(const DiagonalOp &rhs)
         VecCopy(rhs.SigmaZ[i], SigmaZ[i]);
       }
     }
+    if(rhs.total_z_mat_){
+      VecDuplicate(rhs.TotalZ, &TotalZ);
+      VecCopy(rhs.TotalZ, TotalZ);
+    }
   }
 
   return *this;
@@ -96,6 +110,9 @@ DiagonalOp::~DiagonalOp()
     for(unsigned int i = 0; i < SigmaZ.size(); ++i){
       VecDestroy(&SigmaZ[i]);
     }
+  }
+  if(total_z_mat_){
+    VecDestroy(&TotalZ);
   }
 }
 
@@ -113,15 +130,18 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
 
     double Vi = 0.0; // Interaction part
     double mag_term = 0.0; // On-site term
+    double t_mag_term = 0.0; // Imbalance term for TotalZ
     // Loop over all sites of the bit representation
     for(unsigned int site = 0; site < l_; ++site){
       // On-site term
       if(bs & (1 << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
+          if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * 1.0) + 1.0; 
           mag_term += h[site];
       }
       else{ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, -1.0, INSERT_VALUES);
+          if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * -1.0) + 1.0; 
           mag_term -= h[site];
       }
 
@@ -161,6 +181,10 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
       }    
     }
     double diag_term = Vi + mag_term;
+    if(total_z_mat_){
+      t_mag_term = t_mag_term / (2.0 * l_);
+      VecSetValue(TotalZ, state, t_mag_term, INSERT_VALUES);
+    }
     VecSetValue(DiagonalVec, state, diag_term, INSERT_VALUES);
   }
   VecAssemblyBegin(DiagonalVec);
