@@ -1,5 +1,3 @@
-// Typicallity
-
 #include <iostream>
 #include <sstream>
 
@@ -33,14 +31,14 @@ int main(int argc, char **argv)
   double alpha = 0.777;
   double delta = 0.777;
   double h = 0.777;
-  double max_time = 0.777;
-  unsigned int time_its = 777;
+  int periodic = -1;
+  double epsilon = 0.777;
   std::cout << std::fixed;
-  std::cout.precision(7);
+  std::cout.precision(8);
 
   if(argc < 7){
     std::cerr << "Usage: mpirun -np <proc> " << argv[0] << 
-      " --l [sites] --n [fill] --alpha [alpha] --delta [delta] --h [h] --max_time [tmax] --time_its [its] -[PETSc/SLEPc options]" << std::endl;
+      " --l [sites] --n [fill] --alpha [alpha] --delta [delta] --h [h] --periodic [0,1] --epsilon [e] -[PETSc/SLEPc options]" << std::endl;
     exit(1);
   }
 
@@ -51,23 +49,31 @@ int main(int argc, char **argv)
     else if(str == "--alpha") alpha = atof(argv[i + 1]);
     else if(str == "--delta") delta = atof(argv[i + 1]);
     else if(str == "--h") h = atof(argv[i + 1]);
-    else if(str == "--max_time") max_time = atof(argv[i + 1]);
-    else if(str == "--time_its") time_its = atoi(argv[i + 1]);
+    else if(str == "--periodic") periodic = atoi(argv[i + 1]);
+    else if(str == "--epsilon") epsilon = atof(argv[i + 1]);
     else continue;
   }
 
-  if(l == 777 || n == 777 || alpha == 0.777 || delta == 0.777 || h == 0.777 || 
-          max_time == 0.777 || time_its == 777){
+  if(l == 777 || n == 777 || alpha == 0.777 || delta == 0.777 || h == 0.777
+    || periodic == -1 || epsilon == 0.777){
     std::cerr << "Error setting parameters" << std::endl;
     std::cerr << "Usage: mpirun -np <proc> " << argv[0] << 
-      " --l [sites] --n [fill] --alpha [alpha] --delta [delta] --h [h] --max_time [tmax] --time_its [its] -[PETSc/SLEPc options]" << std::endl;
+      " --l [sites] --n [fill] --alpha [alpha] --delta [delta] --h [h] --periodic [0,1] --epsilon [e] -[PETSc/SLEPc options]" << std::endl;
     exit(1);
   }
 
-  std::vector<double> h_vec(l, h);
-  
+  // BC
+  bool bc = false;
+  if(periodic == 1) bc = true; 
+  // Field
+  std::vector<double> h_vec(l, 0.0);
+  h_vec[l / 2] = h;
+
+  PetscLogDouble time_i, time_f;
+
   // Establish the environment
   Environment env(argc, argv, l, n);
+  PetscTime(&time_i);
 
   PetscMPIInt mpirank = env.mpirank;
   PetscMPIInt mpisize = env.mpisize;
@@ -80,88 +86,100 @@ int main(int argc, char **argv)
   basis->construct_int_basis();
   //basis->print_basis(env);
 
-  AdjacencyOp adjmat(env, *basis, alpha, true); 
+  AdjacencyOp adjmat(env, *basis, alpha, bc, false); 
 
-  DiagonalOp diagop(env, *basis, false, false);
+  DiagonalOp diagop(env, *basis, bc, true, false);
   diagop.construct_xxz_diagonal(basis->int_basis, delta, h_vec);
 
   // Now put the effective Hamiltonian in AdjacencyMat
   Utils::join_into_hamiltonian(adjmat.AdjacencyMat, diagop.DiagonalVec);
 
-  // Initial state, random
-  Vec initial;
-  VecDuplicate(diagop.DiagonalVec, &initial);
+  // Get extremal values
+  EPS eps;
+  PetscScalar k0, k1, Emin, Emax, dummy;
+  EPSConvergedReason reason;
+  EPSCreate(PETSC_COMM_WORLD, &eps);
+  EPSSetProblemType(eps, EPS_HEP);
+  
+  EPSSetOperators(eps, adjmat.AdjacencyMat, NULL);
+  
+  EPSSetWhichEigenpairs(eps, EPS_LARGEST_REAL);
+  EPSSolve(eps);
 
-  boost::random::mt19937 gen;
-  gen.seed(mpirank);
-  int rtime = 1;
-  if(rtime) gen.seed(static_cast<LLInt>(std::time(0) + mpirank));
-  boost::random::normal_distribution<double> dist(0.0, 1.0);
-  for(PetscInt index = basis->start; index < basis->end; ++index){
-    double a = dist(gen);
-    double b = dist(gen);
-    PetscScalar c = a + (PETSC_i * b);
-    VecSetValue(initial, index, c, INSERT_VALUES);
+  EPSGetConvergedReason(eps, &reason);
+  if(reason < 0){
+    std::cerr << "EPS solver did not converge LARGE EIGEN" << std::endl;
+    MPI_Abort(PETSC_COMM_WORLD, 1);
   }
-  VecAssemblyBegin(initial);
-  VecAssemblyEnd(initial);
-  // Normalisation
-  PetscReal norm;
-  VecNorm(initial, NORM_2, &norm);
-  VecNormalize(initial, &norm);
-  //VecView(initial, PETSC_VIEWER_STDOUT_WORLD);
+
+  EPSGetEigenvalue(eps, 0, &k1, &dummy);
+  Emax = PetscRealPart(k1);
+ 
+  EPSSetWhichEigenpairs(eps, EPS_SMALLEST_REAL);
+  EPSSolve(eps);
+
+  EPSGetConvergedReason(eps, &reason);
+  if(reason < 0){
+    std::cerr << "EPS solver did not converge SMALL EIGEN" << std::endl;
+    MPI_Abort(PETSC_COMM_WORLD, 1);
+  }
+
+  EPSGetEigenvalue(eps, 0, &k0, &dummy);
+  Emin = PetscRealPart(k0);
+
+  EPSDestroy(&eps);
+
+  //MatScale(adjmat.AdjacencyMat, 1.0 / (Emax - Emin));
+  //MatShift(adjmat.AdjacencyMat, -1.0 * (Emin / (Emax - Emin)));
+  
+  // Mid-spectrum eigenvalues
+  PetscScalar target = (epsilon * (Emax - Emin)) + Emin;
+  EPS eps_si;
+  EPSCreate(PETSC_COMM_WORLD, &eps_si);
+
+  EPSSetProblemType(eps_si, EPS_HEP);
+
+  EPSSetOperators(eps_si, adjmat.AdjacencyMat, NULL);
+
+  EPSSetFromOptions(eps_si);
+  EPSSetWhichEigenpairs(eps_si, EPS_TARGET_REAL);
+  EPSSetTarget(eps_si, target);
+
+  EPSSolve(eps_si);
+  
+  Vec eigvec, tmp;
+  VecCreateMPI(PETSC_COMM_WORLD, basis->nlocal, basis->basis_size, &eigvec);
+  VecDuplicate(eigvec, &tmp);
+
+  PetscInt nconv;
+  EPSGetConverged(eps_si, &nconv);
+  PetscScalar eigr;
+  PetscReal e;
+  PetscScalar sigma_zi;
+  if(mpirank == 0){
+    std::cout << "# L = " << l << std::endl;
+    std::cout << "# N = " << n << std::endl;
+    std::cout << "# Alpha = " << alpha << std::endl;
+    std::cout << "# Delta = " << delta << std::endl;
+    std::cout << "# h = " << h << std::endl;
+    std::cout << "# Emin = " << Emin << " " << "Emax = " << Emax << std::endl;
+  }
+  for(PetscInt i = 0; i < nconv; ++i){
+    EPSGetEigenpair(eps_si, i, &eigr, NULL, eigvec, NULL);
+    VecPointwiseMult(tmp, diagop.SigmaZ[l / 2], eigvec);
+    VecDot(tmp, eigvec, &sigma_zi);
+    e = PetscRealPart((eigr - Emin) / (Emax - Emin));
+    if(mpirank == 0)
+      std::cout << e << " " << PetscRealPart(sigma_zi) << std::endl; 
+  }
 
   delete basis;
+  VecDestroy(&eigvec);
+  VecDestroy(&tmp);
+  EPSDestroy(&eps_si);
+  PetscTime(&time_f);
 
-  //MatView(adjmat.AdjacencyMat, PETSC_VIEWER_STDOUT_WORLD);
-  //MatView(adjmat.CurrentMat, PETSC_VIEWER_STDOUT_WORLD);
-
-  // Time Evo
-  double tol = 1.0e-7;
-  int maxits = 1000000;
-  int iterations = time_its + 1;
-  KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
-
-  std::vector<double> times = linspace(0.0, max_time, iterations);
-
-  // Typicallity procedure
-  // Initial values
-  PetscScalar c_s;
-  Vec phi_1, phi_2, vec_help;
-  VecDuplicate(initial, &phi_1);
-  VecDuplicate(initial, &phi_2);
-  VecDuplicate(initial, &vec_help);
-   
-  // Phi1 and Phi2
-  VecCopy(initial, phi_1);
-  MatMult(adjmat.CurrentMat, initial, phi_2);
-
-  // Initial expectation value
-  MatMult(adjmat.CurrentMat, phi_2, vec_help);
-  VecDot(vec_help, phi_1, &c_s);
-  
-  if(mpirank == 0){
-    std::cout << "# Time    Cs" << std::endl;
-    std::cout << "0.0000000" << " " << PetscRealPart(c_s) / l << std::endl; 
-  }
-
-  for(unsigned int tt = 1; tt < (iterations); ++tt){
-    // First step: Compute evolution under Hamiltonian
-    te.krylov_evo(times[tt], times[tt - 1], phi_1);
-    te.krylov_evo(times[tt], times[tt - 1], phi_2);
-
-    // Compute the expectation value
-    MatMult(adjmat.CurrentMat, phi_2, vec_help);
-    VecDot(vec_help, phi_1, &c_s);
-
-    if(mpirank == 0)
-      std::cout << times[tt] << " " << PetscRealPart(c_s) / l << std::endl;
-  }
-
-  VecDestroy(&initial);
-  VecDestroy(&phi_1);
-  VecDestroy(&phi_2);
-  VecDestroy(&vec_help);
+  if(mpirank == 0) std::cout << "# Total time: " << time_f - time_i << std::endl; 
 
   return 0;
 }
