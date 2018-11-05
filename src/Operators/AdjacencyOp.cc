@@ -7,6 +7,7 @@
 AdjacencyOp::AdjacencyOp(const Environment &env,
                          const Basis &basis,
                          double t,
+                         bool periodic,
                          bool current)
 {
   l_ = env.l;
@@ -18,6 +19,7 @@ AdjacencyOp::AdjacencyOp(const Environment &env,
   start_ = basis.start;
   end_ = basis.end;
   basis_size_ = basis.basis_size;
+  periodic_ = periodic;
   current_ = current;
 
   MatCreate(PETSC_COMM_WORLD, &AdjacencyMat);
@@ -48,6 +50,7 @@ AdjacencyOp::AdjacencyOp(const AdjacencyOp &rhs)
   start_ = rhs.start_;
   end_ = rhs.end_;
   basis_size_ = rhs.basis_size_;
+  periodic_ = rhs.periodic_;
   current_ = rhs.current_;
   
   MatDuplicate(rhs.AdjacencyMat, MAT_COPY_VALUES, &AdjacencyMat);
@@ -74,6 +77,7 @@ AdjacencyOp &AdjacencyOp::operator=(const AdjacencyOp &rhs)
     start_ = rhs.start_;
     end_ = rhs.end_;
     basis_size_ = rhs.basis_size_;
+    periodic_ = rhs.periodic_;
     current_ = rhs.current_;
 
     MatDuplicate(rhs.AdjacencyMat, MAT_COPY_VALUES, &AdjacencyMat);
@@ -97,7 +101,7 @@ AdjacencyOp::~AdjacencyOp()
 /*******************************************************************************/
 void AdjacencyOp::gather_nonlocal_values_(LLInt *start_inds)
 {
-  MPI_Allgather(&start_, 1, MPI_LONG_LONG, start_inds, 1, MPI_LONG_LONG, 
+  MPI_Allgather(&start_, 1, MPIU_INT, start_inds, 1, MPIU_INT, 
     PETSC_COMM_WORLD);
 }
 
@@ -112,20 +116,24 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
                                                 PetscInt *diag, 
                                                 PetscInt *off)
 {
+  LLInt l_end; 
+  if(periodic_) l_end = l_;
+  else l_end = l_ - 1;
+
   for(PetscInt i = 0; i < nlocal_; ++i) diag[i] = 1;
 
   for(PetscInt state = start_; state < end_; ++state){
 
     LLInt bs = int_basis[state - start_];
-
+    
     // Loop over all sites of the bit representation
-    for(unsigned int site = 0; site < (l_ - 1); ++site){
+    for(LLInt site = 0; site < l_end; ++site){
       // A copy to avoid modifying the original basis
       LLInt bitset = bs;
       
       // Case 1: There's a particle in this site
       if(bitset & (1 << site)){
-        int next_site1 = (site + 1);
+        LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, do nothing
         if(bitset & (1 << next_site1)){
@@ -153,7 +161,7 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
       }
       // Case 2: There's no particle in this site
       else{
-        int next_site0 = (site + 1);
+        LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, a swap can occur
         if(bitset & (1 << next_site0)){
@@ -192,7 +200,7 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
   LLInt basis_help_size;
   if(mpirank_ == 0) basis_help_size = nlocal_;
 
-  MPI_Bcast(&basis_help_size, 1, MPI_LONG_LONG, 0, PETSC_COMM_WORLD);
+  MPI_Bcast(&basis_help_size, 1, MPIU_INT, 0, PETSC_COMM_WORLD);
 
   // Create basis_help buffers and initialize them to zero
   LLInt *basis_help = new LLInt[basis_help_size];
@@ -202,7 +210,7 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
   // It's important that the array remains sorted for the binary lookup
   for(LLInt i = 0; i < nlocal_; ++i)
     basis_help[i + (basis_help_size - nlocal_)] = int_basis[i];
-
+  
   // Main communication procedure. A ring exchange of the int_basis using basis_help memory
   // buffer, after a ring exchange occurs each processor looks for the missing indices of
   // the Hamiltonian and replaces the values of cont buffer
@@ -210,27 +218,25 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
   PetscMPIInt prec = (mpirank_ + mpisize_ - 1) % mpisize_;
 
   LLInt cont_size = cont.size();
-
   for(PetscMPIInt exc = 0; exc < mpisize_ - 1; ++exc){
  
-    MPI_Sendrecv_replace(&basis_help[0], basis_help_size, MPI_LONG_LONG, next, 0,
+    MPI_Sendrecv_replace(&basis_help[0], basis_help_size, MPIU_INT, next, 0,
       prec, 0, PETSC_COMM_WORLD, MPI_STATUS_IGNORE);
 
     PetscMPIInt source = Utils::mod((prec - exc), mpisize_);
     for(LLInt i = 0; i < cont_size; ++i){
       if(cont[i] > 0){
         LLInt m_ind = Utils::binsearch(basis_help, basis_help_size, cont[i]);
-
         if(m_ind != -1){
           if(basis_help[0] == 0) m_ind = m_ind - 1;
-          cont[i] = -1ULL * (m_ind + start_inds[source]);
+          cont[i] = -1 * (m_ind + start_inds[source]);
         }
       }
     }
   }
   
   // Flip the signs
-  for(PetscInt i = 0; i < cont_size; ++i) cont[i] = -1ULL * cont[i];
+  for(PetscInt i = 0; i < cont_size; ++i) cont[i] = -1 * cont[i];
   
   // Now cont contains the missing indices
   for(LLInt in = 0; in < cont_size; ++in){
@@ -238,7 +244,7 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
     if(cont[in] < end_ && cont[in] >= start_) diag[st_c - start_]++;
     else off[st_c - start_]++;
   }
-
+  
   delete [] basis_help;
   delete [] start_inds;  
 }
@@ -260,7 +266,7 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
   cont.reserve(basis_size_ / l_);
   std::vector<LLInt> st;
   st.reserve(basis_size_ / l_);
- 
+
   determine_allocation_details_(int_basis, cont, st, d_nnz, o_nnz);
 
   // Preallocation step
@@ -275,6 +281,9 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
   PetscScalar ci_p = 2.0 * t_ * PETSC_i;
   PetscScalar ci_m = -2.0 * t_ * PETSC_i;
   PetscScalar dummy = 0.0;
+  LLInt l_end; 
+  if(periodic_) l_end = l_;
+  else l_end = l_ - 1;
   // Grab 1 of the states and turn it into bit representation
   for(PetscInt state = start_; state < end_; ++state){
     
@@ -282,13 +291,13 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
     MatSetValues(AdjacencyMat, 1, &state, 1, &state, &dummy, ADD_VALUES);
 
     // Loop over all sites of the bit representation
-    for(unsigned int site = 0; site < (l_ - 1); ++site){
+    for(LLInt site = 0; site < l_end; ++site){
       // A copy to avoid modifying the original basis
       LLInt bitset = bs;
       
       // Case 1: There's a particle in this site
       if(bitset & (1 << site)){
-        int next_site1 = (site + 1);
+        LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, do nothing
         if(bitset & (1 << next_site1)){
@@ -320,7 +329,7 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
       }      
       // Case 2: There's no particle in this site
       else{
-        int next_site0 = (site + 1);
+        LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, a swap can occur
         if(bitset & (1 << next_site0)){
@@ -354,7 +363,8 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
   }
 
   // Now cont contains the missing indices
-  for(ULLInt in = 0; in < cont.size(); ++in){
+  LLInt cont_size = cont.size();
+  for(LLInt in = 0; in < cont_size; ++in){
     LLInt st_c = st[in];
     LLInt cont_c = cont[in];
     MatSetValues(AdjacencyMat, 1, &cont_c, 1, &st_c, &ti, ADD_VALUES);
