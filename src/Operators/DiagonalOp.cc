@@ -6,6 +6,7 @@
 /*******************************************************************************/
 DiagonalOp::DiagonalOp(const Environment &env,
                        const Basis &basis,
+                       bool periodic,
                        bool sigma_z_mats,
                        bool total_z_mat)
 {
@@ -17,6 +18,7 @@ DiagonalOp::DiagonalOp(const Environment &env,
   start_ = basis.start;
   end_ = basis.end;
   basis_size_ = basis.basis_size;
+  periodic_ = periodic;
   sigma_z_mats_ = sigma_z_mats;
   total_z_mat_ = total_z_mat; 
 
@@ -47,6 +49,7 @@ DiagonalOp::DiagonalOp(const DiagonalOp &rhs)
   start_ = rhs.start_;
   end_ = rhs.end_;
   basis_size_ = rhs.basis_size_;
+  periodic_ = rhs.periodic_;
   sigma_z_mats_ = rhs.sigma_z_mats_;
   total_z_mat_ = rhs.total_z_mat_;
 
@@ -83,7 +86,9 @@ DiagonalOp &DiagonalOp::operator=(const DiagonalOp &rhs)
     start_ = rhs.start_;
     end_ = rhs.end_;
     basis_size_ = rhs.basis_size_;
+    periodic_ = rhs.periodic_;
     sigma_z_mats_ = rhs.sigma_z_mats_;
+    total_z_mat_ = rhs.total_z_mat_;
 
     VecDuplicate(rhs.DiagonalVec, &DiagonalVec);
     VecCopy(rhs.DiagonalVec, DiagonalVec);
@@ -132,7 +137,7 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
     double mag_term = 0.0; // On-site term
     double t_mag_term = 0.0; // Imbalance term for TotalZ
     // Loop over all sites of the bit representation
-    for(unsigned int site = 0; site < l_; ++site){
+    for(LLInt site = 0; site < l_; ++site){
       // On-site term
       if(bs & (1 << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
@@ -145,13 +150,13 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
           mag_term -= h[site];
       }
 
-      // Open boundary condition
-      if(site == (l_ - 1)) continue;
+      // Boundary condition
+      if((site == l_ - 1) && !periodic_) continue;
 
       // Interaction
       // Case 1: There's a particle in this site
       if(bs & (1 << site)){
-        int next_site1 = (site + 1);
+        LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, increase interaction
         if(bs & (1 << next_site1)){
@@ -166,7 +171,7 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
       }
       // Case 2: There's no particle in this site
       else{
-        int next_site0 = (site + 1);
+        LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, decrease interaction
         if(bs & (1 << next_site0)){
@@ -200,12 +205,12 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
                                               double &h, 
                                               bool &rand)
 {
-  std::vector<unsigned int> Cnl(l_ * l_);
-  std::vector<unsigned int> pre_fact(l_ - 1);
+  std::vector<LLInt> Cnl(l_ * l_);
+  std::vector<LLInt> pre_fact(l_ - 1);
   // Cnl matrix
-  for(unsigned int i = 0; i < l_; ++i){
+  for(LLInt i = 0; i < l_; ++i){
     Cnl[i * l_ + i] = 0;
-    for(unsigned int j = 0; j < l_; ++j){
+    for(LLInt j = 0; j < l_; ++j){
       if(j > i) Cnl[i * l_ + j] = l_ - j - 1;
       else if(j < i) Cnl[i * l_ + j] = l_ - i - 1;
     }
@@ -213,7 +218,7 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
 
   // On-site term prefactor
   pre_fact[0] = l_ / 2;
-  for(unsigned int i = 1; i < (l_ - 1); i += 2){
+  for(LLInt i = 1; i < (l_ - 1); i += 2){
     pre_fact[i] = pre_fact[i - 1] - 1;
     pre_fact[i + 1] = pre_fact[i - 1] - 1;
   }
@@ -225,7 +230,7 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
       boost::random::mt19937 gen;
       gen.seed(static_cast<LLInt>(std::time(0)));
       boost::random::uniform_int_distribution<LLInt> dist(-1, 1);
-      for(unsigned int i = 0; i < (l_ - 1); ++i)
+      for(LLInt i = 0; i < (l_ - 1); ++i)
         rand_seq[i] = dist(gen);
     }
     MPI_Bcast(&rand_seq[0], (l_ - 1), MPI_INT, 0, PETSC_COMM_WORLD);
@@ -237,20 +242,20 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
     LLInt bs = int_basis[state - start_];
 
     std::vector<double> spins(l_);
-    for(unsigned int i = 0; i < l_; ++i)
+    for(LLInt i = 0; i < l_; ++i)
       bs & (1 << i) ? spins[i] = 1.0 : spins[i] = -1.0; 
 
     // On-site term and int term
     double os_term = 0.0; double os_term2 = 0.0; double mag_term = 0.0;
     double int_term = 0.0;
-    for(unsigned int site = 0; site < l_; ++site){
+    for(LLInt site = 0; site < l_; ++site){
       os_term += h * std::pow(-1, site + 1) * spins[site];
       
       if(site == (l_ - 1)) continue;
 
       if(rand){
         double sigma = 0.0; double q_i = 0.0;
-        for(unsigned int i = 0; i < (site + 1); ++i){
+        for(LLInt i = 0; i < (site + 1); ++i){
           sigma += spins[i];
           q_i += rand_seq[i]; 
         }
@@ -259,7 +264,7 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
       else 
         os_term2 += V * pre_fact[site] * spins[site]; // Schwinger
 
-      for(unsigned int j = 0; j < (l_ - 1); ++j){
+      for(LLInt j = 0; j < (l_ - 1); ++j){
         int_term += V * spins[site] * spins[j] * Cnl[site * l_ + j];
       }
     }

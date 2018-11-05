@@ -11,6 +11,7 @@ class DiagonalOp
     // Methods
     DiagonalOp(const Environment &env,
                const Basis &basis,
+               bool periodic = false,
                bool sigma_z_mats = false,
                bool total_z_mat = false);
     ~DiagonalOp();
@@ -36,6 +37,7 @@ class DiagonalOp
     PetscInt nlocal_;
     PetscInt start_;
     PetscInt end_;
+    bool periodic_;
     bool sigma_z_mats_;
     bool total_z_mat_;
 };
