@@ -12,6 +12,7 @@ class AdjacencyOp
     AdjacencyOp(const Environment &env,
                 const Basis &basis,
                 double t,
+                bool periodic = false,
                 bool current = false);
     ~AdjacencyOp();
     AdjacencyOp(const AdjacencyOp &rhs);
@@ -36,6 +37,7 @@ class AdjacencyOp
                                        PetscInt *diag,
                                        PetscInt *off);
     void construct_adjacency_(LLInt *int_basis);
+    bool periodic_;
     bool current_;
 };
 #endif
