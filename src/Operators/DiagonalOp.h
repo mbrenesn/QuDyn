@@ -28,6 +28,10 @@ class DiagonalOp
                                       double &V,
                                       double &h,
                                       bool &rand);
+    void construct_starkm_diagonal(LLInt *int_basis,
+                                  double &V,
+                                  double &gamma,
+                                  double &alpha);
 
   private:
     unsigned int l_, n_;

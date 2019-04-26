@@ -280,3 +280,80 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
   VecAssemblyBegin(DiagonalVec);
   VecAssemblyEnd(DiagonalVec);
 }
+
+/*******************************************************************************/
+// Constructs the diagonal part of Stark localisation Hamiltonian
+// Defined for fermions, not spins. SigmaZ and TotalZ become occupation ops.
+/*******************************************************************************/
+void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
+                                           double &V,
+                                           double &gamma,
+                                           double &alpha)
+{
+  // Grab 1 of the states and turn it into bit representation
+  for(PetscInt state = start_; state < end_; ++state){
+    
+    LLInt bs = int_basis[state - start_];
+
+    double Vi = 0.0; // Interaction part
+    double mag_term = 0.0; // On-site term
+    double t_mag_term = 0.0; // Imbalance term for TotalN
+    // Loop over all sites of the bit representation
+    for(LLInt site = 0; site < l_; ++site){
+      // On-site term
+      if(bs & (1 << site)){ 
+          if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
+          if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * 1.0) + 1.0; 
+          mag_term += ((-1.0 * gamma * site) + (alpha * site * site / (l_* l_))) * 0.5;
+      }
+      else{ 
+          if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 0.0, INSERT_VALUES);
+          if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * -1.0) + 1.0; 
+          mag_term -= ((-1.0 * gamma * site) + (alpha * site * site / (l_* l_))) * 0.5;
+      }
+
+      // Boundary condition
+      if((site == l_ - 1) && !periodic_) continue;
+
+      // Interaction
+      // Case 1: There's a particle in this site
+      if(bs & (1 << site)){
+        LLInt next_site1 = (site + 1) % l_;
+
+        // If there's a particle in next site, increase interaction
+        if(bs & (1 << next_site1)){
+          Vi += V * 0.25;
+          continue;
+        }
+        // Otherwise decrease interaction
+        else{
+          Vi -= V * 0.25;
+          continue;
+        }
+      }
+      // Case 2: There's no particle in this site
+      else{
+        LLInt next_site0 = (site + 1) % l_;
+
+        // If there's a particle in the next site, decrease interaction
+        if(bs & (1 << next_site0)){
+          Vi -= V * 0.25;
+          continue;
+        }
+        // Otherwise increase interaction
+        else{
+          Vi += V * 0.25;
+          continue;
+        }
+      }    
+    }
+    double diag_term = Vi + mag_term;
+    if(total_z_mat_){
+      t_mag_term = t_mag_term / (2.0 * l_);
+      VecSetValue(TotalZ, state, t_mag_term, INSERT_VALUES);
+    }
+    VecSetValue(DiagonalVec, state, diag_term, INSERT_VALUES);
+  }
+  VecAssemblyBegin(DiagonalVec);
+  VecAssemblyEnd(DiagonalVec);
+}
