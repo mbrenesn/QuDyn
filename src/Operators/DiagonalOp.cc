@@ -283,12 +283,10 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
 
 /*******************************************************************************/
 // Constructs the diagonal part of Stark localisation Hamiltonian
-// Defined for fermions, not spins. SigmaZ and TotalZ become occupation ops.
 /*******************************************************************************/
 void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
-                                           double &V,
-                                           double &gamma,
-                                           double &alpha)
+                                           double &Jz,
+                                           double &F)
 {
   // Grab 1 of the states and turn it into bit representation
   for(PetscInt state = start_; state < end_; ++state){
@@ -304,12 +302,12 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
       if(bs & (1 << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
           if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * 1.0) + 1.0; 
-          mag_term += ((-1.0 * gamma * site) + (alpha * site * site / (l_* l_))) * 0.5;
+          mag_term += (F * site);
       }
       else{ 
-          if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 0.0, INSERT_VALUES);
+          if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, -1.0, INSERT_VALUES);
           if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * -1.0) + 1.0; 
-          mag_term -= ((-1.0 * gamma * site) + (alpha * site * site / (l_* l_))) * 0.5;
+          mag_term -= (F * site);
       }
 
       // Boundary condition
@@ -322,12 +320,12 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
 
         // If there's a particle in next site, increase interaction
         if(bs & (1 << next_site1)){
-          Vi += V * 0.25;
+          Vi += Jz;
           continue;
         }
         // Otherwise decrease interaction
         else{
-          Vi -= V * 0.25;
+          Vi -= Jz;
           continue;
         }
       }
@@ -337,12 +335,12 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
 
         // If there's a particle in the next site, decrease interaction
         if(bs & (1 << next_site0)){
-          Vi -= V * 0.25;
+          Vi -= Jz;
           continue;
         }
         // Otherwise increase interaction
         else{
-          Vi += V * 0.25;
+          Vi += Jz;
           continue;
         }
       }    
