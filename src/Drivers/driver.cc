@@ -28,17 +28,16 @@ int main(int argc, char **argv)
 {
   unsigned int l = 777;
   unsigned int n = 777;
-  double J = 0.777;
-  double V = 0.777;
-  double gamma = 0.777;
-  double alpha = 0.777;
+  double J0 = 0.777;
+  double Jz = 0.777;
+  double F = 0.777;
   int periodic = -1;
   std::cout << std::fixed;
   std::cout.precision(8);
 
-  if(argc < 15){
+  if(argc < 13){
     std::cerr << "Usage: mpirun -np <proc> " << argv[0] << 
-      " --l [sites] --n [fill] --J [J] --V [V] --gamma [gamma] --alpha [alpha] --periodic [0,1] -[PETSc/SLEPc options]" << std::endl;
+      " --l [sites] --n [fill] --j0 [j0] --jz [jz] --F [F] --periodic [0,1] -[PETSc/SLEPc options]" << std::endl;
     exit(1);
   }
 
@@ -46,19 +45,17 @@ int main(int argc, char **argv)
     std::string str = argv[i];
     if(str == "--l") l = atoi(argv[i + 1]);
     else if(str == "--n") n = atoi(argv[i + 1]);
-    else if(str == "--J") J = atof(argv[i + 1]);
-    else if(str == "--V") V = atof(argv[i + 1]);
-    else if(str == "--gamma") gamma = atof(argv[i + 1]);
-    else if(str == "--alpha") alpha = atof(argv[i + 1]);
+    else if(str == "--j0") J0 = atof(argv[i + 1]);
+    else if(str == "--jz") Jz = atof(argv[i + 1]);
+    else if(str == "--F") F = atof(argv[i + 1]);
     else if(str == "--periodic") periodic = atoi(argv[i + 1]);
     else continue;
   }
 
-  if(l == 777 || n == 777 || J == 0.777 || V == 0.777 || gamma == 0.777 || alpha == 0.777 
-      || periodic == -1){
+  if(l == 777 || n == 777 || J0 == 0.777 || Jz == 0.777 || F == 0.777 || periodic == -1){
     std::cerr << "Error setting parameters" << std::endl;
     std::cerr << "Usage: mpirun -np <proc> " << argv[0] << 
-      " --l [sites] --n [fill] --J [J] --V [V] --gamma [gamma] --alpha [alpha] --periodic [0,1] -[PETSc/SLEPc options]" << std::endl;
+      " --l [sites] --n [fill] --j0 [j0] --jz [jz] --F [F] --periodic [0,1] -[PETSc/SLEPc options]" << std::endl;
     exit(1);
   }
 
@@ -83,13 +80,17 @@ int main(int argc, char **argv)
   basis->construct_int_basis();
   //basis->print_basis(env);
 
-  AdjacencyOp adjmat(env, *basis, J / 4.0, bc, false); 
+  AdjacencyOp adjmat(env, *basis, J0, bc, false); 
 
-  DiagonalOp diagop(env, *basis, bc, false, true);
-  diagop.construct_starkm_diagonal(basis->int_basis, V, gamma, alpha);
+  DiagonalOp diagop(env, *basis, bc, true, false);
+  diagop.construct_starkm_diagonal(basis->int_basis, Jz, F);
 
   // Now put the effective Hamiltonian in AdjacencyMat
   Utils::join_into_hamiltonian(adjmat.AdjacencyMat, diagop.DiagonalVec);
+
+  //MatView(adjmat.AdjacencyMat, PETSC_VIEWER_STDOUT_WORLD);
+
+  delete basis;
 
   // Time Evo
   double tol = 1.0e-7;
@@ -97,25 +98,44 @@ int main(int argc, char **argv)
   int iterations = 1000 + 1;
   KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
 
-  std::vector<double> times = linspace(0.0, 100, iterations);
+  std::vector<double> times = linspace(0.0, 7, iterations);
 
   // Initial state
-  InitialState init(env, *basis);
-  init.neel_initial_state(basis->int_basis);
+  Vec initial;
+  VecDuplicate(diagop.DiagonalVec, &initial);
+  VecZeroEntries(initial);
+  LLInt index = l / 2;
+  VecSetValue(initial, index, 1.0, INSERT_VALUES);
+  VecAssemblyBegin(initial);
+  VecAssemblyEnd(initial);
 
+  // Initial values
+  PetscScalar z_mag;
   Vec mag_help;
-  VecDuplicate(init.InitialVec, &mag_help);
+  VecDuplicate(initial, &mag_help);
+  for(unsigned int i = 0; i < l; ++i){
+    VecPointwiseMult(mag_help, diagop.SigmaZ[i], initial);
+    VecDot(mag_help, initial, &z_mag);
+    if(mpirank == 0)
+      std::cout << (i + 1) << " " << "0.0" << " " << PetscRealPart(z_mag) << std::endl;
+  }
+  if(mpirank == 0)
+    std::cout << std::endl;
 
-  PetscScalar imbalance;
+  // Time evo
   for(unsigned int tt = 1; tt < (iterations); ++tt){
-    te.krylov_evo(times[tt], times[tt - 1], init.InitialVec);
-
-    VecPointwiseMult(mag_help, diagop.TotalZ, init.InitialVec);
-    VecDot(mag_help, init.InitialVec, &imbalance);
-
-    if(mpirank == 0) std::cout << times[tt] << " " << PetscRealPart(imbalance) << std::endl;
+    te.krylov_evo(times[tt], times[tt - 1], initial);
+    for(unsigned int i = 0; i < l; ++i){
+      VecPointwiseMult(mag_help, diagop.SigmaZ[i], initial);
+      VecDot(mag_help, initial, &z_mag);
+      if(mpirank == 0)
+        std::cout << (i + 1) << " " << times[tt] << " " << PetscRealPart(z_mag) << std::endl;
+    }
+    if(mpirank == 0)
+      std::cout << std::endl;
   }
 
+  VecDestroy(&initial);
   VecDestroy(&mag_help);
 
   return 0;
