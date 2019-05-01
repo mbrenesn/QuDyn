@@ -132,17 +132,17 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
       LLInt bitset = bs;
       
       // Case 1: There's a particle in this site
-      if(bitset & (1 << site)){
+      if(bitset & (1ULL << site)){
         LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, do nothing
-        if(bitset & (1 << next_site1)){
+        if(bitset & (1ULL << next_site1)){
           continue;
         }
         // Otherwise do a swap
         else{
-          bitset ^= 1 << site;
-          bitset ^= 1 << next_site1;
+          bitset ^= 1ULL << site;
+          bitset ^= 1ULL << next_site1;
 
           // Loop over all states and look for a match
           LLInt match_ind1 = Utils::binsearch(int_basis, nlocal_, bitset); 
@@ -164,9 +164,9 @@ void AdjacencyOp::determine_allocation_details_(LLInt *int_basis,
         LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, a swap can occur
-        if(bitset & (1 << next_site0)){
-          bitset ^= 1 << site;
-          bitset ^= 1 << next_site0;
+        if(bitset & (1ULL << next_site0)){
+          bitset ^= 1ULL << site;
+          bitset ^= 1ULL << next_site0;
 
           // Loop over all states and look for a match
           LLInt match_ind0 = Utils::binsearch(int_basis, nlocal_, bitset); 
@@ -296,17 +296,17 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
       LLInt bitset = bs;
       
       // Case 1: There's a particle in this site
-      if(bitset & (1 << site)){
+      if(bitset & (1ULL << site)){
         LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, do nothing
-        if(bitset & (1 << next_site1)){
+        if(bitset & (1ULL << next_site1)){
           continue;
         }
         // Otherwise do a swap
         else{
-          bitset ^= 1 << site;
-          bitset ^= 1 << next_site1;
+          bitset ^= 1ULL << site;
+          bitset ^= 1ULL << next_site1;
 
           // Loop over all states and look for a match
           LLInt match_ind1 = Utils::binsearch(int_basis, nlocal_, bitset); 
@@ -332,9 +332,9 @@ void AdjacencyOp::construct_adjacency_(LLInt *int_basis)
         LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, a swap can occur
-        if(bitset & (1 << next_site0)){
-          bitset ^= 1 << site;
-          bitset ^= 1 << next_site0;
+        if(bitset & (1ULL << next_site0)){
+          bitset ^= 1ULL << site;
+          bitset ^= 1ULL << next_site0;
 
           // Loop over all states and look for a match
           LLInt match_ind0 = Utils::binsearch(int_basis, nlocal_, bitset); 
