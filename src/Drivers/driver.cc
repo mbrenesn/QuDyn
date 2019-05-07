@@ -63,7 +63,7 @@ int main(int argc, char **argv)
   bool bc = false;
   if(periodic == 1) bc = true; 
 
-  PetscLogDouble time_i, time_f, time_1, time_2;
+  PetscLogDouble time_i, time_f;
 
   // Establish the environment
   Environment env(argc, argv, l, n);
@@ -72,42 +72,95 @@ int main(int argc, char **argv)
   PetscMPIInt mpirank = env.mpirank;
   PetscMPIInt mpisize = env.mpisize;
 
+  if(mpirank == 0){
+    std::cout << "# Densities as a function of time" << std::endl;
+    std::cout << "# L = " << l << std::endl;
+    std::cout << "# N = " << n << std::endl;
+    std::cout << "# J0 = " << J0 << std::endl;
+    std::cout << "# JZ = " << Jz << std::endl;
+    std::cout << "# F = " << F << std::endl;
+    std::cout << "# Periodic: " << periodic << std::endl;
+  }
+
   // Establish the basis environment, by pointer, to call an early destructor and reclaim
   // basis memory
   Basis *basis = new Basis(env);
 
   // Construct basis
+  if(mpirank == 0) std::cout << "# Basis" << std::endl;
   basis->construct_int_basis();
   //basis->print_basis(env);
+  if(mpirank == 0) std::cout << "# Basis done" << std::endl;
 
+  if(mpirank == 0) std::cout << "# Adj mat" << std::endl;
   AdjacencyOp adjmat(env, *basis, J0, bc, false); 
+  if(mpirank == 0) std::cout << "# Adj mat done" << std::endl;
 
+  if(mpirank == 0) std::cout << "# Diag" << std::endl;
   DiagonalOp diagop(env, *basis, bc, true, false);
   diagop.construct_starkm_diagonal(basis->int_basis, Jz, F);
+  if(mpirank == 0) std::cout << "# Diag done" << std::endl;
 
   // Now put the effective Hamiltonian in AdjacencyMat
+  if(mpirank == 0) std::cout << "# Joining" << std::endl;
   Utils::join_into_hamiltonian(adjmat.AdjacencyMat, diagop.DiagonalVec);
+  if(mpirank == 0) std::cout << "# Joining done" << std::endl;
 
-  //MatView(adjmat.AdjacencyMat, PETSC_VIEWER_STDOUT_WORLD);
-
-  delete basis;
+  if(mpirank == 0) std::cout << "# Constructed" << std::endl;
+  if(mpirank == 0) std::cout << "# Procs: " << mpisize << std::endl;
 
   // Time Evo
   double tol = 1.0e-7;
   double maxits = 1000000;
-  int iterations = 1000 + 1;
+  int iterations = 200 + 1;
   KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
 
-  std::vector<double> times = linspace(0.0, 7, iterations);
+  std::vector<double> times = linspace(0.0, 20.0, iterations);
 
-  // Initial state
+  if(mpirank == 0) std::cout << "# Time Evo constructed" << std::endl;
+  // Initial state: Typical
   Vec initial;
   VecDuplicate(diagop.DiagonalVec, &initial);
-  VecZeroEntries(initial);
-  LLInt index = l / 2;
-  VecSetValue(initial, index, 1.0, INSERT_VALUES);
+
+  boost::random::mt19937 gen;
+  gen.seed(mpirank);
+  int rtime = 0;
+  if(rtime) gen.seed(static_cast<LLInt>(std::time(0) + mpirank));
+  boost::random::normal_distribution<double> dist(0.0, 1.0);
+  for(PetscInt index = basis->start; index < basis->end; ++index){
+    double a = dist(gen);
+    double b = dist(gen);
+    PetscScalar c = a + (PETSC_i * b);
+    VecSetValue(initial, index, c, INSERT_VALUES);
+  }
   VecAssemblyBegin(initial);
   VecAssemblyEnd(initial);
+  // Normalisation
+  PetscReal norm;
+  VecNorm(initial, NORM_2, &norm);
+  VecNormalize(initial, &norm);
+
+  // Initial state: 1 + (\sigma_z)^L/2
+  // n_(L/2) vector  
+  Vec nL2;
+  VecDuplicate(diagop.DiagonalVec, &nL2);
+  PetscScalar aa;
+  for(PetscInt index = basis->start; index < basis->end; ++index){
+    LLInt bs = basis->int_basis[index - (basis->start)];
+    if(bs & (1 << (l / 2))) aa = 1.0;
+    else aa = 0.0;
+    VecSetValue(nL2, index, aa, INSERT_VALUES);
+  }
+  VecAssemblyBegin(nL2);
+  VecAssemblyEnd(nL2);
+
+  VecPointwiseMult(initial, nL2, initial);
+  VecNorm(initial, NORM_2, &norm);
+  VecNormalize(initial, &norm);
+
+  delete basis;
+
+  if(mpirank == 0) std::cout << "# Init vecs constructed" << std::endl;
 
   // Initial values
   PetscScalar z_mag;
@@ -117,7 +170,7 @@ int main(int argc, char **argv)
     VecPointwiseMult(mag_help, diagop.SigmaZ[i], initial);
     VecDot(mag_help, initial, &z_mag);
     if(mpirank == 0)
-      std::cout << (i + 1) << " " << "0.0" << " " << PetscRealPart(z_mag) << std::endl;
+      std::cout << i << " " << "0.0" << " " << (PetscRealPart(z_mag) + 1.0) / 2.0 << std::endl;
   }
   if(mpirank == 0)
     std::cout << std::endl;
@@ -129,13 +182,19 @@ int main(int argc, char **argv)
       VecPointwiseMult(mag_help, diagop.SigmaZ[i], initial);
       VecDot(mag_help, initial, &z_mag);
       if(mpirank == 0)
-        std::cout << (i + 1) << " " << times[tt] << " " << PetscRealPart(z_mag) << std::endl;
+        std::cout << i << " " << times[tt] << " " 
+          << (PetscRealPart(z_mag) + 1.0) / 2.0 << std::endl;
     }
     if(mpirank == 0)
       std::cout << std::endl;
   }
+  PetscTime(&time_f);
+
+  if(mpirank == 0)
+    std::cout << "# Time: " << time_f - time_i << std::endl;
 
   VecDestroy(&initial);
+  VecDestroy(&nL2);
   VecDestroy(&mag_help);
 
   return 0;
