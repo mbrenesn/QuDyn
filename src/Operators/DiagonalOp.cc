@@ -139,7 +139,7 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
     // Loop over all sites of the bit representation
     for(LLInt site = 0; site < l_; ++site){
       // On-site term
-      if(bs & (1 << site)){ 
+      if(bs & (1ULL << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
           if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * 1.0) + 1.0; 
           mag_term += h[site];
@@ -155,11 +155,11 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
 
       // Interaction
       // Case 1: There's a particle in this site
-      if(bs & (1 << site)){
+      if(bs & (1ULL << site)){
         LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, increase interaction
-        if(bs & (1 << next_site1)){
+        if(bs & (1ULL << next_site1)){
           Vi += delta;
           continue;
         }
@@ -174,7 +174,7 @@ void DiagonalOp::construct_xxz_diagonal(LLInt *int_basis,
         LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, decrease interaction
-        if(bs & (1 << next_site0)){
+        if(bs & (1ULL << next_site0)){
           Vi -= delta;
           continue;
         }
@@ -243,7 +243,7 @@ void DiagonalOp::construct_schwinger_diagonal(LLInt *int_basis,
 
     std::vector<double> spins(l_);
     for(LLInt i = 0; i < l_; ++i)
-      bs & (1 << i) ? spins[i] = 1.0 : spins[i] = -1.0; 
+      bs & (1ULL << i) ? spins[i] = 1.0 : spins[i] = -1.0; 
 
     // On-site term and int term
     double os_term = 0.0; double os_term2 = 0.0; double mag_term = 0.0;
@@ -299,7 +299,7 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
     // Loop over all sites of the bit representation
     for(LLInt site = 0; site < l_; ++site){
       // On-site term
-      if(bs & (1 << site)){ 
+      if(bs & (1ULL << site)){ 
           if(sigma_z_mats_) VecSetValue(SigmaZ[site], state, 1.0, INSERT_VALUES);
           if(total_z_mat_) t_mag_term += (std::pow(-1, site + 1) * 1.0) + 1.0; 
           mag_term += (F * site);
@@ -315,11 +315,11 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
 
       // Interaction
       // Case 1: There's a particle in this site
-      if(bs & (1 << site)){
+      if(bs & (1ULL << site)){
         LLInt next_site1 = (site + 1) % l_;
 
         // If there's a particle in next site, increase interaction
-        if(bs & (1 << next_site1)){
+        if(bs & (1ULL << next_site1)){
           Vi += Jz;
           continue;
         }
@@ -334,7 +334,7 @@ void DiagonalOp::construct_starkm_diagonal(LLInt *int_basis,
         LLInt next_site0 = (site + 1) % l_;
 
         // If there's a particle in the next site, decrease interaction
-        if(bs & (1 << next_site0)){
+        if(bs & (1ULL << next_site0)){
           Vi -= Jz;
           continue;
         }
