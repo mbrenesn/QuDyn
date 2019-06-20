@@ -110,12 +110,16 @@ int main(int argc, char **argv)
   if(mpirank == 0) std::cout << "# Procs: " << mpisize << std::endl;
 
   // Time Evo
+  //double tol = 1.0e-7;
+  //int maxits = 1000000;
+  int iterations = 300 + 1;
+  //KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
   double tol = 1.0e-7;
-  double maxits = 1000000;
-  int iterations = 200 + 1;
-  KrylovEvo te(adjmat.AdjacencyMat, tol, maxits);
+  int maxits = 100000;
 
-  std::vector<double> times = linspace(0.0, 20.0, iterations);
+  ChebyshevEvo cheby(tol, maxits, 0.01);
+
+  std::vector<double> times = linspace(0.0, 30.0, iterations);
 
   if(mpirank == 0) std::cout << "# Time Evo constructed" << std::endl;
   // Initial state: Typical
@@ -176,8 +180,10 @@ int main(int argc, char **argv)
     std::cout << std::endl;
 
   // Time evo
+  cheby.initialize(adjmat.AdjacencyMat);
   for(unsigned int tt = 1; tt < (iterations); ++tt){
-    te.krylov_evo(times[tt], times[tt - 1], initial);
+    //te.krylov_evo(times[tt], times[tt - 1], initial);
+    cheby.chebyshev_evo(times[tt], times[tt - 1], initial, adjmat.AdjacencyMat);
     for(unsigned int i = 0; i < l; ++i){
       VecPointwiseMult(mag_help, diagop.SigmaZ[i], initial);
       VecDot(mag_help, initial, &z_mag);
