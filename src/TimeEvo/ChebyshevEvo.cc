@@ -67,7 +67,7 @@ void ChebyshevEvo::chebyshev_evo(const double &final_time,
   PetscReal epsilon_r = PetscRealPart(epsilon);
 
   PetscReal argument = (Emax_r - Emin_r + epsilon_r) * (final_time - initial_time) * 0.5;
-  PetscScalar phase_factor = PetscExpComplex(1.0 * PETSC_i * final_time * b_scale); 
+  PetscScalar phase_factor = PetscExpComplex(-1.0 * PETSC_i * final_time * b_scale); 
 
   PetscReal minimum_rank = PetscCeilReal( (Emax_r - Emin_r) * (final_time - initial_time) * 0.5);
 
@@ -77,10 +77,10 @@ void ChebyshevEvo::chebyshev_evo(const double &final_time,
  
   // Bessel coefficients
   std::vector<PetscScalar> chev_coeff;
-  PetscReal chev_val = boost::math::cyl_bessel_j(0, argument);
+  PetscReal chev_val = boost::math::cyl_bessel_j(0, -1.0 * argument);
   chev_coeff.push_back( chev_val * phase_factor);
   for(unsigned int it = 1; it < minimum_rank; ++it){
-    chev_val = boost::math::cyl_bessel_j(it, argument);
+    chev_val = boost::math::cyl_bessel_j(it, -1.0 * argument);
     chev_coeff.push_back( 2 * PetscPowComplex(PETSC_i, it) * chev_val * phase_factor);
   }
 
@@ -107,9 +107,10 @@ void ChebyshevEvo::chebyshev_evo(const double &final_time,
   }
 
   double l2_norm;
+  double oned = 1.0;
   while(true){
     last_it++;
-    chev_val = boost::math::cyl_bessel_j(last_it, argument);
+    chev_val = boost::math::cyl_bessel_j(last_it, -1.0 * argument);
     chev_coeff.push_back( 2 * PetscPowComplex(PETSC_i, last_it) * chev_val * phase_factor);
     VecScale(phi_0, -1.0);
     VecScale(phi_1, 2.0);
@@ -121,7 +122,7 @@ void ChebyshevEvo::chebyshev_evo(const double &final_time,
    
     if(last_it % 3 == 0){
       VecNorm(vec, NORM_2, &l2_norm);
-      if(PetscAbsReal(l2_norm - 1.0) < tol_){
+      if(PetscAbsReal(l2_norm - oned) < tol_){
         break;
       }
     }
